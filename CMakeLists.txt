@@ -223,6 +223,48 @@ if (BINLOG_BUILD_BRECOVERY)
 endif()
 
 #---------------------------
+# btui
+#---------------------------
+
+option(BINLOG_BUILD_BTUI "Build the btui TUI log viewer" OFF)
+
+if (BINLOG_BUILD_BTUI)
+  include(FetchContent)
+  FetchContent_Declare(
+    ftxui
+    GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
+    GIT_TAG        v5.0.0
+  )
+  set(FTXUI_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+  set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(FTXUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(FTXUI_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(ftxui)
+
+  # FTXUI sources do not compile cleanly with binlog's strict -Werror flags.
+  # Add -Wno-error to FTXUI library targets so warnings are not fatal.
+  foreach(_ftxui_target screen dom component)
+    if(TARGET ${_ftxui_target})
+      target_compile_options(${_ftxui_target} PRIVATE -Wno-error)
+    endif()
+  endforeach()
+
+  add_executable(btui
+    bin/btui.cpp
+    bin/btui_model.cpp
+    bin/btui_app.cpp
+    $<$<PLATFORM_ID:Windows>:bin/getopt.cpp>
+  )
+  target_link_libraries(btui PRIVATE binlog ftxui::screen ftxui::dom ftxui::component)
+  target_include_directories(btui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/bin)
+  target_compile_features(btui PRIVATE cxx_std_17)
+  set_target_properties(btui PROPERTIES CXX_CLANG_TIDY "")
+  set_property(TARGET btui PROPERTY INTERPROCEDURAL_OPTIMIZATION ${BINLOG_HAS_IPO})
+
+  list(APPEND BINLOG_INSTALL_TARGETS "btui")
+endif()
+
+#---------------------------
 # Documentation
 #---------------------------
 
@@ -305,6 +347,13 @@ if (BINLOG_BUILD_UNIT_TESTS)
     target_link_libraries(UnitTest Threads::Threads) # used by: TestQueue, TestSessionWriter, TestCreateSourceAndEvent
     target_include_directories(UnitTest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/bin)
     target_include_directories(UnitTest SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test) # for doctest/doctest.h
+
+  if (BINLOG_BUILD_BTUI)
+    target_sources(UnitTest PRIVATE
+      bin/btui_model.cpp
+      test/unit/binlog/TestBtuiModel.cpp
+    )
+  endif()
 
   add_test(NAME UnitTest COMMAND UnitTest -s --force-colors)
   set_property(TEST UnitTest PROPERTY ENVIRONMENT ASAN_OPTIONS=detect_leaks=1)
